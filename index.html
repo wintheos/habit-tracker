@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Трекер привычек</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <h1>Трекер привычек</h1>
+
+    <p id="save-error" class="save-error" role="alert" hidden>Не удалось сохранить данные: хранилище браузера недоступно. Отметки пропадут после закрытия страницы.</p>
+
+    <nav class="day-nav" aria-label="Выбор дня">
+      <button id="day-prev" type="button" aria-label="Предыдущий день">←</button>
+      <div class="day-info">
+        <div id="day-title" class="day-title"></div>
+        <div id="day-sub" class="day-sub"></div>
+      </div>
+      <button id="day-next" type="button" aria-label="Следующий день">→</button>
+    </nav>
+    <div class="day-meta">
+      <span id="day-progress"></span>
+      <button id="day-today" type="button" hidden>Вернуться к сегодня</button>
+    </div>
+
+    <form id="add-form" class="add-form" autocomplete="off">
+      <input id="add-input" type="text" maxlength="60" placeholder="Новая привычка, например «Выпить воды»" aria-label="Название привычки">
+      <button type="submit">Добавить</button>
+    </form>
+
+    <ul id="habit-list" class="habit-list"></ul>
+    <p id="empty" class="empty" hidden>Пока нет ни одной привычки. Добавьте первую выше.</p>
+
+    <section id="stats" class="stats" hidden>
+      <h2>Календарь и статистика</h2>
+      <select id="stats-habit" aria-label="Привычка для статистики"></select>
+
+      <div class="cal-nav">
+        <button id="cal-prev" type="button" aria-label="Предыдущий месяц">←</button>
+        <div id="cal-title" class="cal-title"></div>
+        <button id="cal-next" type="button" aria-label="Следующий месяц">→</button>
+      </div>
+      <div id="cal-grid" class="cal-grid" role="grid"></div>
+
+      <dl id="stats-summary" class="stats-summary"></dl>
+    </section>
+  </main>
+  <script src="streak.js"></script>
+  <script src="stats.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

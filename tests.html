@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Тесты</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; }
+    h1 { font-size: 1.3rem; }
+    .summary { font-weight: 600; margin-bottom: 12px; }
+    ul { list-style: none; padding: 0; }
+    li { padding: 4px 0; }
+    li.pass::before { content: "✓ "; color: #2f855a; }
+    li.fail::before { content: "✗ "; color: #c53030; }
+    li.fail { color: #c53030; }
+    code { background: #0001; padding: 0 4px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Тесты расчёта серий</h1>
+  <div id="summary" class="summary"></div>
+  <ul id="results"></ul>
+
+  <script src="streak.js"></script>
+  <script src="stats.js"></script>
+  <script>
+    const results = [];
+    function test(name, fn) {
+      try { fn(); results.push({ name, ok: true }); }
+      catch (e) { results.push({ name, ok: false, error: e.message }); }
+    }
+    function eq(actual, expected) {
+      const a = JSON.stringify(actual), e = JSON.stringify(expected);
+      if (a !== e) throw new Error(`ожидалось ${e}, получено ${a}`);
+    }
+
+    const T = "2026-10-02"; // «сегодня» во всех тестах
+
+    test("пустой список → 0 и 0", () => eq(calcStreak([], T), { current: 0, best: 0 }));
+
+    test("отмечено только сегодня → 1 и 1", () => eq(calcStreak(["2026-10-02"], T), { current: 1, best: 1 }));
+
+    test("отмечено только вчера → серия жива (1), не обнуляется", () =>
+      eq(calcStreak(["2026-10-01"], T), { current: 1, best: 1 }));
+
+    test("три дня подряд, включая сегодня → 3", () =>
+      eq(calcStreak(["2026-09-30", "2026-10-01", "2026-10-02"], T), { current: 3, best: 3 }));
+
+    test("три дня подряд, сегодня ещё не отмечено → 3", () =>
+      eq(calcStreak(["2026-09-29", "2026-09-30", "2026-10-01"], T), { current: 3, best: 3 }));
+
+    test("пропуск дня обрывает: сегодня и позавчера → current 1", () =>
+      eq(calcStreak(["2026-09-30", "2026-10-02"], T), { current: 1, best: 1 }));
+
+    test("последняя отметка позавчера → current 0", () =>
+      eq(calcStreak(["2026-09-29", "2026-09-30"], T), { current: 0, best: 2 }));
+
+    test("лучшая серия в прошлом длиннее текущей", () =>
+      eq(calcStreak(["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-05", "2026-10-02"], T),
+         { current: 1, best: 5 }));
+
+    test("граница месяца: 30 сентября → 1 октября", () =>
+      eq(calcStreak(["2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02"], T), { current: 4, best: 4 }));
+
+    test("граница года: 31 декабря → 1 января", () =>
+      eq(calcStreak(["2025-12-30", "2025-12-31", "2026-01-01"], "2026-01-01"), { current: 3, best: 3 }));
+
+    test("високосный день: 28 февраля → 29 февраля → 1 марта 2024", () =>
+      eq(calcStreak(["2024-02-28", "2024-02-29", "2024-03-01"], "2024-03-01"), { current: 3, best: 3 }));
+
+    test("невисокосный год: 28 февраля → 1 марта 2025 — это подряд", () =>
+      eq(calcStreak(["2025-02-28", "2025-03-01"], "2025-03-01"), { current: 2, best: 2 }));
+
+    test("даты в произвольном порядке", () =>
+      eq(calcStreak(["2026-10-02", "2026-09-30", "2026-10-01"], T), { current: 3, best: 3 }));
+
+    test("повторяющиеся даты считаются один раз", () =>
+      eq(calcStreak(["2026-10-02", "2026-10-02", "2026-10-01", "2026-10-01"], T), { current: 2, best: 2 }));
+
+    test("даты из будущего игнорируются", () =>
+      eq(calcStreak(["2026-10-02", "2026-10-03", "2026-10-04"], T), { current: 1, best: 1 }));
+
+    test("переход на летнее время (март) не ломает серию", () =>
+      eq(calcStreak(["2026-03-28", "2026-03-29", "2026-03-30"], "2026-03-30"), { current: 3, best: 3 }));
+
+    test("переход на зимнее время (октябрь/ноябрь) не ломает серию", () =>
+      eq(calcStreak(["2026-10-24", "2026-10-25", "2026-10-26"], "2026-10-26"), { current: 3, best: 3 }));
+
+    test("длинная серия в 400 дней через год", () => {
+      const dates = [];
+      for (let i = 0; i < 400; i++) {
+        const d = new Date(Date.UTC(2025, 8, 2 + i));
+        dates.push(d.toISOString().slice(0, 10));
+      }
+      eq(calcStreak(dates, dates[dates.length - 1]), { current: 400, best: 400 });
+    });
+
+    // ---------- Календарь ----------
+    const flat = (g) => g.flat();
+    const inMonthKeys = (g) => flat(g).filter((c) => c.inMonth).map((c) => c.key);
+
+    test("октябрь 2026: 31 день, неделя начинается с понедельника", () => {
+      const g = monthGrid(2026, 9); // 1 октября 2026 — четверг
+      eq(inMonthKeys(g).length, 31);
+      eq(g[0][3], { key: "2026-10-01", inMonth: true }); // Пн Вт Ср [Чт]
+      eq(g[0][0], { key: "2026-09-28", inMonth: false });
+      eq(g.every((w) => w.length === 7), true);
+    });
+
+    test("февраль 2026 начинается в воскресенье → ячейка 1 числа последняя в первой неделе", () => {
+      const g = monthGrid(2026, 1); // 1 февраля 2026 — воскресенье
+      eq(g[0][6], { key: "2026-02-01", inMonth: true });
+      eq(inMonthKeys(g).length, 28);
+      eq(g.length, 5);
+    });
+
+    test("февраль 2024 (високосный): 29 дней, есть 29 февраля", () => {
+      const keys = inMonthKeys(monthGrid(2024, 1));
+      eq(keys.length, 29);
+      eq(keys[28], "2024-02-29");
+    });
+
+    test("февраль 2021 начинается с понедельника и занимает ровно 4 недели", () => {
+      const g = monthGrid(2021, 1); // 1 февраля 2021 — понедельник, 28 дней
+      eq(g.length, 4);
+      eq(g[0][0], { key: "2021-02-01", inMonth: true });
+    });
+
+    test("месяц на 6 недель: август 2026 (1-е — суббота, 31 день)", () => {
+      eq(monthGrid(2026, 7).length, 6);
+    });
+
+    test("сетка через границу года: январь 2026 захватывает конец декабря 2025", () => {
+      const g = monthGrid(2026, 0); // 1 января 2026 — четверг
+      eq(g[0][0], { key: "2025-12-29", inMonth: false });
+    });
+
+    // ---------- Процент выполнения ----------
+    const D = (n) => { // n дней назад от T
+      const d = new Date(2026, 9, 2 - n);
+      return formatKey(d);
+    };
+
+    test("7 дней: 3 отметки из 7 → 43%", () =>
+      eq(completionRate([D(0), D(2), D(5)], D(30), T, 7), { done: 3, total: 7, percent: 43 }));
+
+    test("30 дней: 15 отметок из 30 → 50%", () => {
+      const dates = [];
+      for (let i = 0; i < 30; i += 2) dates.push(D(i));
+      eq(completionRate(dates, D(100), T, 30), { done: 15, total: 30, percent: 50 });
+    });
+
+    test("отметки старше окна не считаются", () =>
+      eq(completionRate([D(0), D(10)], D(60), T, 7), { done: 1, total: 7, percent: 14 }));
+
+    test("новая привычка (создана 2 дня назад) → знаменатель 3, а не 7", () =>
+      eq(completionRate([D(0)], D(2), T, 7), { done: 1, total: 3, percent: 33 }));
+
+    test("привычка создана сегодня и не отмечена → 0 из 1", () =>
+      eq(completionRate([], T, T, 7), { done: 0, total: 1, percent: 0 }));
+
+    test("отметка раньше даты создания расширяет период", () =>
+      eq(completionRate([D(4), D(0)], D(1), T, 7), { done: 2, total: 5, percent: 40 }));
+
+    test("100%, если отмечены все дни окна", () =>
+      eq(completionRate([D(0), D(1), D(2), D(3), D(4), D(5), D(6)], D(40), T, 7), { done: 7, total: 7, percent: 100 }));
+
+    test("будущие отметки не попадают в процент", () =>
+      eq(completionRate([D(0), D(-1)], D(3), T, 7), { done: 1, total: 4, percent: 25 }));
+
+    test("totalDone: уникальные даты без будущих", () =>
+      eq(totalDone([D(0), D(0), D(1), D(-3)], T), 2));
+
+    test("totalDone: пустой список → 0", () => eq(totalDone([], T), 0));
+
+    // вывод
+    const failed = results.filter((r) => !r.ok);
+    document.getElementById("summary").textContent =
+      failed.length ? `Провалено: ${failed.length} из ${results.length}` : `Все тесты прошли: ${results.length} из ${results.length}`;
+    document.getElementById("results").replaceChildren(...results.map((r) => {
+      const li = document.createElement("li");
+      li.className = r.ok ? "pass" : "fail";
+      li.textContent = r.ok ? r.name : `${r.name} — ${r.error}`;
+      return li;
+    }));
+    document.title = (failed.length ? "FAIL" : "PASS") + " · Тесты";
+    window.__testResults = { total: results.length, failed: failed.length };
+  </script>
+</body>
+</html>
