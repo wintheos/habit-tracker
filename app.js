@@ -191,13 +191,126 @@ function initUI() {
     queueMicrotask(() => { input.focus(); input.select(); });
   }
 
+  // ---------- Свайп влево открывает «Переименовать» и «Удалить» ----------
+
+  let openRow = null;
+  let suppressClick = false;
+
+  // Сдвигает плашку: открыта — на ширину блока действий влево, закрыта — на место.
+  function setOpen(li, open) {
+    const w = li.querySelector(".habit-actions").offsetWidth;
+    li.style.setProperty("--x", open ? `-${w}px` : "0px");
+    li.classList.toggle("open", open);
+    if (open) {
+      if (openRow && openRow !== li) setOpen(openRow, false);
+      openRow = li;
+    } else if (openRow === li) {
+      openRow = null;
+    }
+  }
+
+  function attachSwipe(li, body, actions) {
+    let pid = null;
+    let dragging = false;
+    let startX = 0, startY = 0, startOffset = 0, width = 0, offset = 0;
+    let prevX = 0, prevT = 0, velocity = 0;
+
+    // Движение и отпускание слушаем на документе, пока идёт жест: палец или мышь
+    // могут уехать с плашки на блок действий, и события не должны теряться.
+    const stop = () => {
+      pid = null;
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", finish);
+      document.removeEventListener("pointercancel", finish);
+    };
+
+    body.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      pid = e.pointerId;
+      dragging = false;
+      startX = prevX = e.clientX;
+      startY = e.clientY;
+      prevT = e.timeStamp;
+      velocity = 0;
+      width = actions.offsetWidth;
+      startOffset = li.classList.contains("open") ? -width : 0;
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", finish);
+      document.addEventListener("pointercancel", finish);
+    });
+
+    function onMove(e) {
+      if (e.pointerId !== pid) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (!dragging) {
+        // Вертикальное движение — это прокрутка страницы, свайп не начинаем.
+        if (Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx)) { stop(); return; }
+        if (Math.abs(dx) < 8) return;
+        dragging = true;
+        li.classList.add("dragging");
+        if (openRow && openRow !== li) setOpen(openRow, false);
+      }
+      velocity = (e.clientX - prevX) / Math.max(1, e.timeStamp - prevT);
+      prevX = e.clientX;
+      prevT = e.timeStamp;
+
+      offset = Math.min(0, startOffset + dx);
+      if (offset < -width) offset = -width + (offset + width) / 3; // за краем тянется туго, как на iOS
+      li.style.setProperty("--x", `${offset}px`);
+    }
+
+    function finish(e) {
+      if (e.pointerId !== pid) return;
+      const wasDragging = dragging;
+      dragging = false;
+      stop();
+      if (!wasDragging) return;
+      li.classList.remove("dragging");
+      // Быстрый взмах решает сам, иначе смотрим, перешла ли плашка середину.
+      const open = Math.abs(velocity) > 0.4 ? velocity < 0 : offset < -width / 2;
+      setOpen(li, open);
+      suppressClick = true;
+      setTimeout(() => { suppressClick = false; }, 0);
+    }
+
+    // После свайпа клик не должен ставить галочку или жать кнопку под пальцем;
+    // тап по плашке открытой строки закрывает её, кнопки действий остаются рабочими.
+    li.addEventListener("click", (e) => {
+      if (suppressClick) {
+        e.preventDefault();
+        e.stopPropagation();
+      } else if (li.classList.contains("open") && body.contains(e.target)) {
+        e.preventDefault();
+        e.stopPropagation();
+        setOpen(li, false);
+      }
+    }, true);
+
+    // С клавиатуры скрытые кнопки открываются при фокусе и закрываются, когда фокус ушёл из строки.
+    actions.addEventListener("focusin", () => setOpen(li, true));
+    li.addEventListener("focusout", (e) => {
+      if (li.classList.contains("open") && !li.contains(e.relatedTarget)) setOpen(li, false);
+    });
+  }
+
+  document.addEventListener("pointerdown", (e) => {
+    if (openRow && !openRow.contains(e.target)) setOpen(openRow, false);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && openRow) setOpen(openRow, false);
+  });
+
   function renderRow(habit) {
     const li = document.createElement("li");
     li.className = "habit";
     li.dataset.id = habit.id;
+    const body = document.createElement("div");
+    body.className = "habit-body";
+    li.append(body);
 
     if (editingId === habit.id) {
-      renderEditRow(habit, li);
+      renderEditRow(habit, body);
       return li;
     }
 
@@ -206,7 +319,7 @@ function initUI() {
       const question = document.createElement("span");
       question.className = "name";
       question.textContent = `Удалить «${habit.name}» вместе с историей?`;
-      li.append(
+      body.append(
         question,
         button("Удалить", "danger", () => {
           confirmingId = null;
@@ -241,12 +354,16 @@ function initUI() {
     label.append(check, name);
     li.classList.toggle("done", check.checked);
 
-    li.append(
-      label,
-      streakEl,
-      button("Переименовать", "", () => { editingId = habit.id; confirmingId = null; render(); }),
-      button("Удалить", "danger", () => { confirmingId = habit.id; editingId = null; render(); }),
+    body.append(label, streakEl);
+
+    const actions = document.createElement("div");
+    actions.className = "habit-actions";
+    actions.append(
+      button("Переименовать", "rename", () => { editingId = habit.id; confirmingId = null; render(); }),
+      button("Удалить", "delete", () => { confirmingId = habit.id; editingId = null; render(); }),
     );
+    li.prepend(actions);
+    attachSwipe(li, body, actions);
     return li;
   }
 
@@ -330,6 +447,7 @@ function initUI() {
   }
 
   function render() {
+    openRow = null;
     renderDay();
     listEl.replaceChildren(...state.habits.map(renderRow));
     emptyEl.hidden = state.habits.length > 0;

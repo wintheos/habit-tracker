@@ -7,6 +7,9 @@
   --accent: #2f855a;
   --accent-text: #ffffff;
   --danger: #c53030;
+  /* Плашки действий при свайпе: одинаковые в обеих темах, текст на них всегда белый. */
+  --rename-bg: #52667a;
+  --delete-bg: #d64545;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -113,13 +116,54 @@ button.danger { color: var(--danger); }
 }
 
 .habit {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+/* Плашка с привычкой лежит поверх блока действий и сдвигается за пальцем (--x задаёт JS). */
+.habit-body {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  transform: translateX(var(--x, 0px));
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  touch-action: pan-y;
+}
+
+.habit.dragging .habit-body {
+  transition: none;
+  user-select: none;
+}
+
+.habit-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+}
+
+.habit .habit-actions button {
+  padding: 0 16px;
+  white-space: nowrap;
+  border: 0;
+  border-radius: 0;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.habit-actions .rename { background: var(--rename-bg); }
+.habit-actions .delete { background: var(--delete-bg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .habit-body { transition: none; }
 }
 
 .habit .name {
@@ -284,7 +328,3 @@ button.danger { color: var(--danger); }
 .stats-summary dt { color: var(--muted); font-size: 0.85rem; }
 .stats-summary dd { margin: 0; font-weight: 600; }
 
-@media (max-width: 420px) {
-  .habit { flex-wrap: wrap; }
-  .habit .name { flex-basis: 100%; }
-}
